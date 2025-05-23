@@ -76,9 +76,9 @@ To use a custom domain:
 2. Click "Add custom domain"
 3. Follow the DNS configuration instructions
 
-The app includes a `netlify.toml` configuration file that ensures:
-- Proper SPA routing with redirects
-- Node.js 18 environment
+The app includes deployment configuration files that ensure:
+- Proper SPA routing with `_redirects` file
+- Node.js 22 environment via `netlify.toml`
 - Correct build settings
 
 ## License
