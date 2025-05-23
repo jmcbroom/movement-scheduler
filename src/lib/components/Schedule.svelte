@@ -49,22 +49,75 @@
     return { short: dayName, full: dayName };
   }
 
-  // Create continuous 30-minute time slots from 13:00 to 02:00
+  // Create dynamic time slots based on actual events for the selected day
   const createTimeSlots = () => {
-    const slots = [];
-    // Main day: 13:00 to 23:30 (11 hours × 2 = 22 slots)
-    for (let hour = 13; hour <= 23; hour++) {
-      slots.push(`${hour.toString().padStart(2, "0")}:00`);
-      slots.push(`${hour.toString().padStart(2, "0")}:30`);
+    if (!selectedDay || !stages) {
+      return [];
     }
-    // Early morning: 00:00 to 02:00 (5 slots)
-    slots.push("00:00");
-    slots.push("00:30");
-    slots.push("01:00");
-    slots.push("01:30");
-    slots.push("02:00");
 
-    return slots; // Total: 27 slots
+    // Get all events for the selected day
+    const dayEvents: any[] = [];
+    Object.values(stages).forEach((stageEvents) => {
+      stageEvents.forEach((event) => {
+        const dateStr = event.date;
+        const date = new Date(dateStr + "T12:00:00");
+        const dayDisplay = date.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          timeZone: "UTC",
+        });
+        if (dayDisplay === selectedDay) {
+          dayEvents.push(event);
+        }
+      });
+    });
+
+    if (dayEvents.length === 0) {
+      return [];
+    }
+
+    // Find earliest start time and latest end time
+    let earliestStart = "23:59";
+    let latestEnd = "00:00";
+
+    dayEvents.forEach((event) => {
+      if (event.startTime < earliestStart) {
+        earliestStart = event.startTime;
+      }
+      if (event.endTime > latestEnd || (event.endTime < "06:00" && latestEnd >= "06:00")) {
+        latestEnd = event.endTime;
+      }
+    });
+
+    // Convert times to minutes for easier calculation
+    const [startHour, startMin] = earliestStart.split(":").map(Number);
+    const [endHour, endMin] = latestEnd.split(":").map(Number);
+    
+    // Adjust end time if it's past midnight
+    const adjustedEndHour = endHour < 6 ? endHour + 24 : endHour;
+    
+    // Round start time down to nearest 30-min and end time up to nearest 30-min
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = adjustedEndHour * 60 + endMin;
+    
+    const roundedStartMinutes = Math.floor(startMinutes / 30) * 30;
+    const roundedEndMinutes = Math.ceil(endMinutes / 30) * 30;
+    
+    // Add 30-minute buffer on both sides
+    const bufferedStartMinutes = roundedStartMinutes - 30;
+    const bufferedEndMinutes = roundedEndMinutes + 30;
+
+    // Generate 30-minute slots
+    const slots = [];
+    for (let minutes = bufferedStartMinutes; minutes <= bufferedEndMinutes; minutes += 30) {
+      const hours = Math.floor(minutes / 60) % 24;
+      const mins = minutes % 60;
+      const timeString = `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`;
+      slots.push(timeString);
+    }
+
+    return slots;
   };
 
   $: if (markwhenContent) {
@@ -73,6 +126,7 @@
 
   $: if (stages && selectedDay !== undefined) {
     filterByDay();
+    timeSlots = createTimeSlots();
   }
 
   function parseSchedule() {
@@ -82,12 +136,11 @@
 
       events = [];
       extractEventsFromContent();
-      timeSlots = createTimeSlots();
     } catch (error) {
       console.error("Error parsing schedule:", error);
       events = [];
       stages = {};
-      timeSlots = createTimeSlots();
+      timeSlots = [];
     }
   }
 
@@ -215,14 +268,20 @@
   }
 
   function getEventPosition(event: any) {
+    if (timeSlots.length === 0) {
+      return { leftPosition: 0, width: 80 };
+    }
+
     const startTime = event.startTime;
     const endTime = event.endTime;
 
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = timeToMinutes(endTime);
 
-    // Base time is 13:00 (13 * 60 = 780 minutes)
-    const baseMinutes = 13 * 60;
+    // Base time is the first time slot
+    const firstSlot = timeSlots[0];
+    const [baseHour, baseMin] = firstSlot.split(":").map(Number);
+    const baseMinutes = baseHour * 60 + baseMin;
 
     // Calculate exact pixel position
     // Each 30-minute slot is 80px wide, so each minute is 80/30 = 2.67px
@@ -638,11 +697,13 @@
               style="min-width: {timeSlots.length * 80}px;"
             >
               <!-- Hour markers -->
-              {#each Array(14) as _, i}
-                <div
-                  class="absolute top-0 bottom-0 w-px bg-gray-200 dark:bg-gray-600 pointer-events-none"
-                  style="left: {i * 160}px;"
-                ></div>
+              {#each timeSlots as slot, i}
+                {#if slot.endsWith(':00')}
+                  <div
+                    class="absolute top-0 bottom-0 w-px bg-gray-200 dark:bg-gray-600 pointer-events-none"
+                    style="left: {i * 80}px;"
+                  ></div>
+                {/if}
               {/each}
 
               <!-- Events positioned absolutely within this row -->
